@@ -34,9 +34,8 @@
             </main>
 
             <footer class="bg-gray-50 p-4 border-t border-gray-200 flex flex-wrap justify-center items-center gap-4">
-                <input type="email" id="email-address" placeholder="Your email address" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 flex-grow md:flex-grow-0">
-                <button id="email-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-transform transform hover:scale-105">
-                    📧 Email Note
+                <button id="share-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-transform transform hover:scale-105">
+                    📤 Share Note
                 </button>
                 <button id="txt-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-transform transform hover:scale-105">
                     📄 Download as .txt
@@ -52,25 +51,27 @@
         document.addEventListener('DOMContentLoaded', () => {
             const notepad = document.getElementById('notepad');
             const noteTitle = document.getElementById('note-title');
-            const emailBtn = document.getElementById('email-btn');
+            const shareBtn = document.getElementById('share-btn');
             const txtBtn = document.getElementById('txt-btn');
             const pdfBtn = document.getElementById('pdf-btn');
-            const emailAddressInput = document.getElementById('email-address');
 
             const STORAGE_KEY_CONTENT = 'simple-notepad-content';
             const STORAGE_KEY_TITLE = 'simple-notepad-title';
 
             // --- Helper Functions ---
-            function getDynamicName() {
+            function getDynamicName(extension = '') {
                 const title = noteTitle.value.trim();
+                let baseName;
                 if (title) {
-                    return title.replace(/[^a-zA-Z0-9]/g, '-'); // Sanitize for filename
+                    baseName = title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-');
+                } else {
+                    const date = new Date();
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    baseName = `Note-${year}-${month}-${day}`;
                 }
-                const date = new Date();
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                return `Note-${year}-${month}-${day}`;
+                return extension ? `${baseName}.${extension}` : baseName;
             }
 
             // --- Data Persistence ---
@@ -86,31 +87,35 @@
 
             // --- Event Handlers ---
 
-            // Email notes using a special Gmail URL
-            emailBtn.addEventListener('click', () => {
-                const email = emailAddressInput.value;
-                if (!email) {
-                    alert('Please enter your email address first.');
-                    return;
-                }
-
-                // Step 1: Inform the user and download the file
-                alert("First, we'll save the note as a .txt file. Then, the Gmail app will open. Please attach the file you just saved.");
-                downloadTxt(); // Re-use the download function
-
-                // Step 2: Prepare and open the Gmail compose window
-                const subject = encodeURIComponent(getDynamicName());
-                const body = encodeURIComponent("Here is the note you requested.\n\n(Please attach the .txt file from your downloads.)");
+            // Share note using the Web Share API
+            shareBtn.addEventListener('click', async () => {
+                const title = getDynamicName();
+                const text = notepad.value;
+                const filename = getDynamicName('txt');
                 
-                // This URL scheme is designed to open the Gmail app on mobile
-                const gmailUrl = `googlegmail:///co?to=${email}&subject=${subject}&body=${body}`;
-                window.open(gmailUrl, '_blank');
+                const blob = new Blob([text], { type: 'text/plain' });
+                const file = new File([blob], filename, { type: 'text/plain' });
+
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try {
+                        await navigator.share({
+                            title: title,
+                            text: `Note: ${title}`,
+                            files: [file],
+                        });
+                        console.log('Note shared successfully');
+                    } catch (error) {
+                        console.error('Error sharing:', error);
+                    }
+                } else {
+                    alert("Sharing files is not supported on this browser. Try downloading the file instead.");
+                }
             });
 
             // Download as .txt file
             function downloadTxt() {
                 const text = notepad.value;
-                const filename = `${getDynamicName()}.txt`;
+                const filename = getDynamicName('txt');
                 const blob = new Blob([text], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -123,17 +128,17 @@
             }
             txtBtn.addEventListener('click', downloadTxt);
 
-
             // Download as .pdf file
             pdfBtn.addEventListener('click', () => {
                 if (window.jspdf && window.jspdf.jsPDF) {
                     const { jsPDF } = window.jspdf;
                     const doc = new jsPDF();
                     const text = notepad.value;
-                    const filename = `${getDynamicName()}.pdf`;
+                    const filename = getDynamicName('pdf');
                     
+                    doc.setFontSize(12);
                     const lines = doc.splitTextToSize(text, 180);
-                    doc.text(lines, 10, 10);
+                    doc.text(lines, 15, 20);
                     
                     doc.save(filename);
                 } else {
@@ -145,12 +150,17 @@
             notepad.addEventListener('input', saveNotes);
             noteTitle.addEventListener('input', saveNotes);
             loadNotes();
+
+            // Hide share button if not supported
+            if (!navigator.share) {
+                shareBtn.style.display = 'none';
+            }
         });
 
         // Register the Service Worker for PWA functionality
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
+                navigator.serviceWorker.register('/my-notes-app/sw.js') // Use the full path for your repo
                     .then(registration => {
                         console.log('ServiceWorker registration successful:', registration);
                     })
